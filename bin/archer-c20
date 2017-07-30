@@ -13,9 +13,14 @@ options = {
   host: '192.168.0.1'
 }
 
+ACTIONS = {
+  'status' => ['post', '/cgi?1&1&1&5&5&5&5&5&5&5&5', 'status'],
+  'logout' => ['post', '/cgi?8', 'logout']
+}.freeze
+
 parser = OptionParser.new do |opts|
   opts.separator ''
-  opts.separator 'Available actions: status'
+  opts.separator "Available actions: #{ACTIONS.keys.join(', ')}"
 
   opts.on('-u USER', 'Username') do |v|
     options[:user] = v
@@ -52,18 +57,9 @@ class Api
 
   def perform(action)
     response =
-      case action
-      when 'status'
-        post(
-          '/cgi?1&1&1&5&5&5&5&5&5&5&5',
-          predefined_payload('status')
-        )
-      when 'logout'
-        post(
-          '/cgi?8',
-          predefined_payload('logout')
-        )
-      when 'custom'
+      if (args = ACTIONS[action])
+        perform_action(*args)
+      elsif action == 'custom'
         if payload
           post(@path, payload).body
         else
@@ -78,6 +74,15 @@ class Api
   end
 
   private
+
+  def perform_action(method, *args)
+    if method == 'post'
+      path, payload, = args
+      post(path, predefined_payload(payload))
+    else
+      get(*args)
+    end
+  end
 
   def predefined_payload(name)
     payload(predefined_payload_path(name))
