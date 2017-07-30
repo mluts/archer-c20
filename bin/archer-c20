@@ -1,0 +1,146 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'net/http'
+require 'uri'
+
+# Logout:
+# POST /cgi?8 HTTP/1.1
+# payload:
+# [/cgi/logout#0,0,0,0,0,0#0,0,0,0,0,0]0,0
+
+options = {
+  host: '192.168.0.1'
+}
+
+parser = OptionParser.new do |opts|
+  opts.separator ''
+  opts.separator 'Available actions: status'
+
+  opts.on('-u USER', 'Username') do |v|
+    options[:user] = v
+  end
+
+  opts.on('-p PASSWORD', 'Password') do |v|
+    options[:password] = v
+  end
+
+  opts.on('-H HOST', 'Host') do |v|
+    options[:host] = v
+  end
+
+  opts.on('-l path', 'Path') do |v|
+    options[:path] = v
+  end
+
+  opts.on('-d payload', 'Payload') do |v|
+    options[:payload] = v
+  end
+end
+parser.parse!
+
+USAGE = parser.to_s
+
+class Api
+  def initialize(host, user, password, path: nil, payload: nil)
+    @host = host
+    @user = user
+    @password = password
+    @path = path
+    @payload = payload
+  end
+
+  def perform(action)
+    response =
+      case action
+      when 'status'
+        post(
+          '/cgi?1&1&1&5&5&5&5&5&5&5&5',
+          predefined_payload('status')
+        )
+      when 'logout'
+        post(
+          '/cgi?8',
+          predefined_payload('logout')
+        )
+      when 'custom'
+        if payload
+          post(@path, payload).body
+        else
+          get(@path).body
+        end
+      else
+        puts "Unknown action: #{action.inspect}"
+        abort USAGE
+      end
+
+    puts response.code, response.body
+  end
+
+  private
+
+  def predefined_payload(name)
+    payload(predefined_payload_path(name))
+  end
+
+  def payload(data = @payload)
+    if data && File.exist?(File.expand_path(data))
+      IO.read(File.expand_path(data))
+    else
+      data
+    end
+  end
+
+  def predefined_payload_path(name)
+    File.join(__dir__, '..', 'payload', name)
+  end
+
+  def get(path)
+    uri = make_uri(path)
+    Net::HTTP.start(uri.host, uri.port) do |http|
+      http.request(Net::HTTP::Get.new(uri, headers))
+    end
+  end
+
+  def post(path, payload)
+    uri = make_uri(path)
+    Net::HTTP.start(uri.host, uri.port) do |http|
+      req = Net::HTTP::Post.new(uri, headers)
+      req.body = payload
+      req.content_type = 'text/plain'
+      http.request(req)
+    end
+  end
+
+  def headers
+    {
+      'Cookie' => auth_cookie(@user, @password),
+      'Referer' => make_uri_string('/mainFrame.htm')
+    }
+  end
+
+  def make_uri(path)
+    URI(make_uri_string(path))
+  end
+
+  def make_uri_string(path)
+    "http://#{@host}#{path}"
+  end
+
+  def http_basic_encode(user, password)
+    Net::HTTP::Get.new('/').send(:basic_encode, user, password)
+  end
+
+  def auth_cookie(user, password)
+    "Authorization=#{http_basic_encode(user, password)}"
+  end
+end
+
+action = ARGV[0]
+
+args = options.values_at(:host, :user, :password)
+
+abort USAGE if args.any?(&:nil?) || action.nil?
+
+api = Api.new(*args, path: options[:path], payload: options[:payload])
+api.perform(action)
